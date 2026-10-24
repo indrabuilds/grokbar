@@ -183,6 +183,15 @@ func expectedPace(start: Date?, end: Date?, fallbackDays: Double) -> Double? {
 /// Countdown formatting.
 /// - compact (menu bar): days when ≥ 1 day, otherwise hours (matches Grokbar on Omarchy).
 /// - full (detail panel): days and hours when ≥ 1 day; otherwise hours (and minutes under 1h).
+/// Menu bar "days left" suffix. Whole days remaining, rounded down ("3d" for 3 days 20 h);
+/// under one day shows "<1d". Returns nil when the reset date is missing or already past,
+/// so the bar falls back to the percentage alone.
+func daysLeftLabel(_ interval: TimeInterval?) -> String? {
+    guard let interval, interval.isFinite, interval > 0 else { return nil }
+    if interval < 86_400 { return "<1d" }
+    return "\(Int(interval / 86_400))d"
+}
+
 func formatCountdown(_ interval: TimeInterval?, compact: Bool = false) -> String? {
     guard let interval else { return nil }
     if interval <= 0 {

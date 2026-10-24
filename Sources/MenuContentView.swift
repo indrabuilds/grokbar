@@ -89,6 +89,17 @@ struct MenuContentView: View {
 
     private var settingsPage: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text("Menu bar")
+                .font(.headline)
+            Toggle("Show days left", isOn: $model.showDaysLeft)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Show days until the usage resets next to the percentage, e.g. 42% · 3d")
+            Text("Whole days until the pool resets; under a day shows “<1d”. Hidden if the reset date is unknown.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
             Text("Usage")
                 .font(.headline)
             Text("One shared pool for Grok, Grok Bot and Cursor on the X Subscription, read from your Grok sign-in (`grok login`). Cursor doesn’t need to be open.")

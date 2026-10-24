@@ -8,7 +8,7 @@ import SwiftUI
 /// **smaller → further left** in the status-item strip (away from the clock).
 /// We pin to the leading edge of that strip — the leftmost status item.
 @MainActor
-final class StatusBarController: NSObject {
+final class StatusBarController: NSObject, NSPopoverDelegate {
     static let autosaveName = "GrokBar"
 
     private let model: UsageViewModel
@@ -16,6 +16,11 @@ final class StatusBarController: NSObject {
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
     private var localEventMonitor: Any?
+    private var escKeyMonitor: Any?
+    /// When the popover last closed. A `.transient` popover closes itself on the same
+    /// mouse-down that hits the status item; without this the click would reopen it.
+    private var lastPopoverCloseAt: Date?
+    private let reopenGuard: TimeInterval = 0.3
 
     init(model: UsageViewModel) {
         self.model = model
@@ -35,6 +40,9 @@ final class StatusBarController: NSObject {
             button.setButtonType(.toggle)
             button.target = self
             button.action = #selector(statusItemClicked(_:))
+            // Act on mouse-down (like system menu extras) so the transient auto-close
+            // and our click land within the reopen guard window.
+            button.sendAction(on: [.leftMouseDown])
             button.toolTip = model.menuBarAccessibilityLabel
             button.appearsDisabled = false
         }
@@ -77,6 +85,15 @@ final class StatusBarController: NSObject {
             }
             .store(in: &cancellables)
 
+        // "Show days left" applies immediately, whether toggled in the popover or via `defaults write`.
+        model.$showDaysLeft
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateButton()
+            }
+            .store(in: &cancellables)
+
         model.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -93,13 +110,18 @@ final class StatusBarController: NSObject {
         button.imagePosition = .imageOnly
     }
 
+    /// Click toggles: open → close, closed → open.
     @objc private func statusItemClicked(_ sender: Any?) {
         guard let button = statusItem?.button else { return }
         if let popover, popover.isShown {
             closePopover()
+        } else if let closed = lastPopoverCloseAt, Date().timeIntervalSince(closed) < reopenGuard {
+            // The transient popover already closed itself for this very click.
+            lastPopoverCloseAt = nil
         } else {
             showPopover(relativeTo: button)
         }
+        button.state = (popover?.isShown == true) ? .on : .off
     }
 
     private func showPopover(relativeTo button: NSStatusBarButton) {
@@ -111,6 +133,7 @@ final class StatusBarController: NSObject {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         let hosting = NSHostingController(
             rootView: MenuContentView(model: model)
                 .environment(\.colorScheme, colorSchemeForMenuBar())
@@ -122,21 +145,50 @@ final class StatusBarController: NSObject {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         button.state = .on
 
-        // Dismiss when clicking outside.
+        // Dismiss when clicking in another app (the transient behavior covers our own windows).
         localEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
                 self?.closePopover()
             }
         }
+        // Esc closes it.
+        escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event }
+            MainActor.assumeIsolated { self?.closePopover() }
+            return nil
+        }
     }
 
     private func closePopover() {
-        popover?.performClose(nil)
+        guard let popover else { return }
+        if popover.isShown {
+            popover.performClose(nil)  // → popoverDidClose does the cleanup
+        } else {
+            popoverCleanup()
+        }
+    }
+
+    nonisolated func popoverWillClose(_ notification: Notification) {
+        MainActor.assumeIsolated { lastPopoverCloseAt = Date() }
+    }
+
+    nonisolated func popoverDidClose(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            lastPopoverCloseAt = Date()
+            popoverCleanup()
+        }
+    }
+
+    private func popoverCleanup() {
         popover = nil
         statusItem?.button?.state = .off
         if let localEventMonitor {
             NSEvent.removeMonitor(localEventMonitor)
             self.localEventMonitor = nil
+        }
+        if let escKeyMonitor {
+            NSEvent.removeMonitor(escKeyMonitor)
+            self.escKeyMonitor = nil
         }
     }
 

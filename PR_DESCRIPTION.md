@@ -41,6 +41,21 @@ was also slow (every 20 min, and the popover only refreshed data older than 15 m
   - asserts `CFBundleIdentifier == com.pixbroker.GrokBar`
   - signs the app ad hoc and verifies the signature
   - zips with `ditto` and uploads the `GrokBar` artifact
+- **"Show days left" toggle** (gear → Menu bar). On: `42% · 3d`; off: `42%`.
+  - Source: the billing period end, `config.currentPeriod.end` (fallback `config.billingPeriodEnd`) from the same
+    Grok billing response. Nothing else is fetched.
+  - Rounding: whole days remaining, rounded down (3 d 20 h → `3d`); under 24 h → `<1d`. A missing or past reset date
+    shows the percentage only (no "now"/"?" placeholder).
+  - Stored in UserDefaults key `showDaysLeft` (Bool, **default on**, so the bar keeps showing a countdown as 1.1.0 did,
+    now as days only). Changing it in the popover updates the menu bar at once via a Combine sink on
+    `$showDaysLeft`; a KVO observer on `UserDefaults` also picks up `defaults write … showDaysLeft` while the app runs,
+    so this pref is not launch-only.
+- **Status item click toggles the popover.** Clicking the item while the popover is open now closes it instead of
+  closing and immediately reopening it. A `.transient` popover dismisses itself on the same mouse-down that hits the
+  status item; the controller now acts on mouse-down, records the close time in `popoverWillClose`/`popoverDidClose`
+  (`NSPopoverDelegate`), and ignores a reopen within 0.3 s of a close. Clicking in another app (global monitor),
+  clicking elsewhere (transient behavior) and Esc (local key monitor, keyCode 53) still close it; monitors are removed
+  in `popoverDidClose`.
 - Bundle id unchanged (`com.pixbroker.GrokBar`).
 
 ## Why 90 seconds
@@ -86,3 +101,27 @@ in this PR, so nothing depends on Cursor.
   4. The refresh button is clickable when idle.
   5. Sleeping and waking the Mac triggers a fetch.
   6. Quitting Cursor has no effect.
+  7. Gear → toggle "Show days left": the bar switches between `42%` and `42% · 3d` immediately; same with
+     `defaults write com.pixbroker.GrokBar showDaysLeft -bool false|true` while running.
+  8. Click the item twice: it opens, then closes (no flicker/reopen). Click outside and press Esc: it closes.
+
+## Menu bar icon: unchanged, and why
+
+The request was to swap the SuperGrok mark for the Grok Bot icon only if an official, properly licensed asset exists.
+None was found, so the icon is unchanged (still `GrokIcon*` from 1.1.0) and nothing was redrawn.
+
+- **xAI Brand Guidelines** (https://x.ai/legal/brand-guidelines, dated Feb 14, 2025): logos may be used only
+  "exactly as provided at the download link … without any alteration or adjustment", only to refer to xAI/Grok, not in
+  ways implying endorsement, and xAI "may terminate your permission … at any time". This is a revocable trademark
+  permission, not a license.
+- **Official download** (https://data.x.ai/logos/xAI_Grok_Assets.zip, fetched Oct 24, 2026): Grok logomark, Grok full
+  logomark, Grok wordmark and xAI logomarks in Dark/Light SVG/PNG. **No Grok Bot mark** is included.
+- **Grok Bot mark elsewhere:** only inline on xAI's own pages, an App Store icon (X Corp.), a press handout distributed
+  through Europa Press for news use, and third-party re-hosts (asvg.app, toolradar.com, iloveicons.app) that state the
+  download grants no trademark permission. None is an official, permitted asset for use in an app.
+- Converting any mark into a monochrome template would also be an "alteration" under the guidelines.
+- Note: the repo's existing `Resources/GrokBotIcon.svg` (from the upstream initial commit, used only by the removed Grok
+  Bot card) has no recorded source or license; it was not used for the menu bar.
+- The existing Grok mark: the official kit's Grok logomark is the authoritative source; the upstream `GrokIcon*` files
+  predate this PR and were not changed. To switch to Grok Bot later, ask legal@x.ai or wait for xAI to add a Grok Bot
+  mark to the official kit.

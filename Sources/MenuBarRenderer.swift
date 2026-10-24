@@ -26,7 +26,7 @@ enum MenuBarRenderer {
         let text: String
         switch model.state {
         case .loaded(let snap):
-            text = barText(percent: snap.usedPercent, resetsIn: snap.resetsIn)
+            text = barText(percent: snap.usedPercent, resetsIn: snap.resetsIn, showDaysLeft: model.showDaysLeft)
         case .unavailable:
             text = model.hasActiveOutage ? "⚠" : "—"
         case .failed:
@@ -80,10 +80,11 @@ enum MenuBarRenderer {
         return image
     }
 
-    private static func barText(percent: Double, resetsIn: TimeInterval?) -> String {
+    /// "42%" when "Show days left" is off; "42% · 3d" when on and a reset date is known.
+    static func barText(percent: Double, resetsIn: TimeInterval?, showDaysLeft: Bool) -> String {
         let pct = "\(Int(percent.rounded()))%"
-        if let countdown = formatCountdown(resetsIn, compact: true) {
-            return "\(pct) \(countdown)"
+        if showDaysLeft, let days = daysLeftLabel(resetsIn) {
+            return "\(pct) · \(days)"
         }
         return pct
     }

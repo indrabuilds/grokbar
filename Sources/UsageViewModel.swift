@@ -37,7 +37,24 @@ final class UsageViewModel: ObservableObject {
 
     @Published private(set) var clockTick: Date = Date()
 
-    init() {}
+    /// UserDefaults key for the menu bar "days left" suffix (Bool, default on).
+    nonisolated static let showDaysLeftKey = "showDaysLeft"
+
+    /// Menu bar shows "42% · 3d" when on, "42%" when off. Written to UserDefaults on change
+    /// and also re-read live when the default changes outside the app (`defaults write`).
+    @Published var showDaysLeft: Bool {
+        didSet {
+            guard showDaysLeft != oldValue else { return }
+            UserDefaults.standard.set(showDaysLeft, forKey: Self.showDaysLeftKey)
+        }
+    }
+
+    private var defaultsObservation: NSKeyValueObservation?
+
+    init() {
+        UserDefaults.standard.register(defaults: [Self.showDaysLeftKey: true])
+        showDaysLeft = UserDefaults.standard.bool(forKey: Self.showDaysLeftKey)
+    }
 
     var hasActiveOutage: Bool {
         serviceStatus?.hasActiveIncident == true
@@ -70,6 +87,7 @@ final class UsageViewModel: ObservableObject {
         didStart = true
         LoginItemService.ensureEnabled()
         loadCacheIntoState()
+        observeDefaults()
         observeSleepAndWake()
         refreshAutomatically()
         scheduleBackgroundPoll()
@@ -94,6 +112,8 @@ final class UsageViewModel: ObservableObject {
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.forEach { center.removeObserver($0) }
         workspaceObservers.removeAll()
+        defaultsObservation?.invalidate()
+        defaultsObservation = nil
     }
 
     /// Refresh button: always fetches unless a fetch is already in flight.
@@ -350,6 +370,17 @@ final class UsageViewModel: ObservableObject {
         }
     }
 
+    /// Pick up `defaults write com.pixbroker.GrokBar showDaysLeft -bool …` without a relaunch.
+    private func observeDefaults() {
+        defaultsObservation = UserDefaults.standard.observe(\.showDaysLeft, options: [.new]) { [weak self] defaults, _ in
+            let value = defaults.bool(forKey: UsageViewModel.showDaysLeftKey)
+            Task { @MainActor in
+                guard let self, self.showDaysLeft != value else { return }
+                self.showDaysLeft = value
+            }
+        }
+    }
+
     /// Pause polling while the Mac sleeps; refresh as soon as it wakes.
     private func observeSleepAndWake() {
         let center = NSWorkspace.shared.notificationCenter
@@ -384,5 +415,12 @@ final class UsageViewModel: ObservableObject {
                 self.clockTick = Date()
             }
         }
+    }
+}
+
+extension UserDefaults {
+    /// KVO-visible mirror of the `showDaysLeft` key (the property name must equal the key).
+    @objc dynamic var showDaysLeft: Bool {
+        bool(forKey: UsageViewModel.showDaysLeftKey)
     }
 }

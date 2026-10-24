@@ -46,8 +46,11 @@ was also slow (every 20 min, and the popover only refreshed data older than 15 m
     Grok billing response. Nothing else is fetched.
   - Rounding: whole days remaining, rounded down (3 d 20 h → `3d`); under 24 h → `<1d`. A missing or past reset date
     shows the percentage only (no "now"/"?" placeholder).
-  - Stored in UserDefaults key `showDaysLeft` (Bool, **default on**, so the bar keeps showing a countdown as 1.1.0 did,
-    now as days only). Changing it in the popover updates the menu bar at once via a Combine sink on
+  - Stored in UserDefaults key `showDaysLeft` (Bool, **default off**, so the bar shows just the percentage until the
+    user opts in). The default is only registered (`register(defaults:)`, in memory); the key is written solely by the
+    toggle's `didSet`, which Swift doesn't run during `init`, and the KVO observer only mirrors external changes. So
+    indra.2 never stored `true` on its own, and no migration is needed: untouched installs start off, and anyone who
+    switched it on keeps their choice. Changing it in the popover updates the menu bar at once via a Combine sink on
     `$showDaysLeft`; a KVO observer on `UserDefaults` also picks up `defaults write … showDaysLeft` while the app runs,
     so this pref is not launch-only.
 - **Status item click toggles the popover.** Clicking the item while the popover is open now closes it instead of

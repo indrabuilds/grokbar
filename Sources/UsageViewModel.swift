@@ -37,7 +37,9 @@ final class UsageViewModel: ObservableObject {
 
     @Published private(set) var clockTick: Date = Date()
 
-    /// UserDefaults key for the menu bar "days left" suffix (Bool, default on).
+    /// UserDefaults key for the menu bar "days left" suffix (Bool, default off).
+    /// The default is only registered (in memory); the key is written solely when the user
+    /// changes the setting, so an untouched install has no stored value.
     nonisolated static let showDaysLeftKey = "showDaysLeft"
 
     /// Menu bar shows "42% · 3d" when on, "42%" when off. Written to UserDefaults on change
@@ -52,7 +54,7 @@ final class UsageViewModel: ObservableObject {
     private var defaultsObservation: NSKeyValueObservation?
 
     init() {
-        UserDefaults.standard.register(defaults: [Self.showDaysLeftKey: true])
+        UserDefaults.standard.register(defaults: [Self.showDaysLeftKey: false])
         showDaysLeft = UserDefaults.standard.bool(forKey: Self.showDaysLeftKey)
     }
 

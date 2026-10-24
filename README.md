@@ -38,7 +38,7 @@ On the X Subscription, Grok, Grok Bot and Cursor draw from one shared pool, so G
 
 Click the item to open the usage panel (plan, reset countdown, product split); click it again, click outside, or press Esc to close it.
 
-**Show days left** (gear → Menu bar, on by default) adds the days until the pool resets: `42% · 3d`. Whole days, rounded down; under one day shows `<1d`; if the billing response has no reset date the bar shows the percentage only. Off shows `42%`. The setting is stored as `showDaysLeft` and applies immediately, including `defaults write com.pixbroker.GrokBar showDaysLeft -bool false` while the app runs.
+**Show days left** (gear → Menu bar, off by default) adds the days until the pool resets: `42% · 3d`. Whole days, rounded down; under one day shows `<1d`; if the billing response has no reset date the bar shows the percentage only. Off shows `42%`. The setting is stored as `showDaysLeft` and applies immediately, including `defaults write com.pixbroker.GrokBar showDaysLeft -bool true` while the app runs.
 
 - Plan name, weekly or monthly % used, reset date
 - Pace marker on the usage bar (where linear usage “should” be)

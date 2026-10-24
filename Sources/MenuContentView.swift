@@ -5,20 +5,28 @@ struct MenuContentView: View {
     @ObservedObject var model: UsageViewModel
     @State private var showingSettings = false
     @State private var grokIdentityOpen = false
-    @State private var grokBotIdentityOpen = false
-    @State private var cursorIdentityOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            // When usage is loaded, the gear/refresh buttons sit on the plan title row
+            // (providerHeader) instead of on a row of their own above it, so the
+            // content starts at the top margin.
+            if showingSettings || !hasTitleRow {
+                header
+            }
             if showingSettings {
                 settingsPage
             } else {
                 usagePage
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(width: 340)
+    }
+
+    private var hasTitleRow: Bool {
+        if case .loaded = model.state { return true }
+        return false
     }
 
     private var header: some View {
@@ -36,25 +44,33 @@ struct MenuContentView: View {
                 Spacer()
             } else {
                 Spacer()
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(.borderless)
-                .help("Settings")
-                .accessibilityLabel("Settings")
-
-                Button {
-                    model.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .disabled(model.isRefreshing)
-                .help("Refresh")
-                .accessibilityLabel("Refresh")
+                toolbarButtons
             }
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    /// Settings + Refresh. Shown in the header row, or on the plan title row when loaded.
+    private var toolbarButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                showingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+            .help("Settings")
+            .accessibilityLabel("Settings")
+
+            Button {
+                model.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.isRefreshing)
+            .help("Refresh")
+            .accessibilityLabel("Refresh")
         }
         .foregroundStyle(.secondary)
     }
@@ -68,22 +84,11 @@ struct MenuContentView: View {
         }
 
         VStack(alignment: .leading, spacing: 14) {
-            if model.showGrokUsage {
-                grokCard
-            }
-            if model.showGrokBotUsage {
-                if model.showGrokUsage { Divider() }
-                grokBotCard
-            }
-            if model.showCursorUsage {
-                if model.showGrokUsage || model.showGrokBotUsage { Divider() }
-                cursorCard
-            }
-            if !model.showGrokUsage && !model.showGrokBotUsage && !model.showCursorUsage {
-                Text("Turn on SuperGrok, Grok Bot, or Cursor in Settings.")
-                    .font(.callout)
+            grokCard
+            if let updated = model.lastUpdatedAt {
+                Text("Updated \(Self.updatedFormatter.localizedString(for: updated, relativeTo: Date()))")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
 
@@ -102,17 +107,24 @@ struct MenuContentView: View {
 
     private var settingsPage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Show in Menu Bar")
+            Text("Menu bar")
                 .font(.headline)
-            Toggle("SuperGrok", isOn: $model.showGrokUsage)
-            Toggle("Grok Bot", isOn: $model.showGrokBotUsage)
-            Toggle("Cursor", isOn: $model.showCursorUsage)
-            Text("Grok Bot and Cursor use your Cursor session when it matches the Grok account.")
+            Toggle("Show days left", isOn: $model.showDaysLeft)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Show days until the usage resets next to the percentage, e.g. 42% · 3d")
+            Text("Whole days until the pool resets; under a day shows “<1d”. Hidden if the reset date is unknown.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            Text("Usage")
+                .font(.headline)
+            Text("One shared pool for Grok, Grok Bot and Cursor on the X Subscription, read from your Grok sign-in (`grok login`). Cursor doesn’t need to be open.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .toggleStyle(.checkbox)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -121,14 +133,14 @@ struct MenuContentView: View {
         switch model.state {
         case .loaded(let snap):
             providerHeader(
-                icon: ProviderIcons.grok,
+                icon: ProviderIcons.grokBot,
                 title: snap.subscriptionLabel,
                 name: snap.accountName,
                 email: snap.accountEmail ?? model.identity?.email,
                 identityOpen: $grokIdentityOpen
             )
             usageBlock(
-                usedLabel: "\(Int(snap.usedPercent.rounded()))% of weekly limit used",
+                usedLabel: "\(Int(snap.usedPercent.rounded()))% of \(snap.cycleLabel.lowercased()) limit used",
                 reset: snap.periodEnd,
                 usedFraction: snap.usedPercent / 100,
                 pace: expectedPace(start: snap.periodStart, end: snap.periodEnd, fallbackDays: 7),
@@ -166,100 +178,7 @@ struct MenuContentView: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Loading SuperGrok…")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var grokBotCard: some View {
-        if let snap = model.grokBotSnapshot {
-            providerHeader(
-                icon: ProviderIcons.grokBot,
-                title: snap.planLabel,
-                name: snap.accountName,
-                email: snap.accountEmail,
-                identityOpen: $grokBotIdentityOpen
-            )
-            if let percent = snap.usedPercent, snap.hasAllowance {
-                usageBlock(
-                    usedLabel: "\(Int(percent.rounded()))% of weekly limit used",
-                    reset: snap.periodEnd,
-                    usedFraction: percent / 100,
-                    pace: expectedPace(start: snap.periodStart, end: snap.periodEnd, fallbackDays: 7),
-                    dayCount: 7
-                )
-            }
-            if let message = snap.statusMessage ?? model.grokBotMessage, !message.isEmpty, !snap.hasAllowance || snap.usedPercent == nil {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else if let message = model.grokBotMessage {
-            providerHeader(
-                icon: ProviderIcons.grokBot,
-                title: "Grok Bot",
-                name: nil,
-                email: nil,
-                identityOpen: $grokBotIdentityOpen
-            )
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if model.isRefreshing {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading Grok Bot…")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var cursorCard: some View {
-        if let snap = model.cursorSnapshot {
-            providerHeader(
-                icon: ProviderIcons.cursor,
-                title: snap.planName,
-                name: snap.accountName,
-                email: snap.accountEmail,
-                identityOpen: $cursorIdentityOpen
-            )
-            poolRow(
-                title: "Cursor Models",
-                percent: snap.cursorModelsPercent,
-                reset: snap.periodEnd,
-                start: snap.periodStart,
-                showReset: true
-            )
-            poolRow(
-                title: "Other Models",
-                percent: snap.otherModelsPercent,
-                reset: snap.periodEnd,
-                start: snap.periodStart,
-                showReset: false
-            )
-        } else if let message = model.cursorMessage {
-            providerHeader(
-                icon: ProviderIcons.cursor,
-                title: "Cursor",
-                name: nil,
-                email: nil,
-                identityOpen: $cursorIdentityOpen
-            )
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if model.isRefreshing {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading Cursor…")
+                Text("Loading usage…")
                     .foregroundStyle(.secondary)
             }
         }
@@ -291,6 +210,7 @@ struct MenuContentView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Show account")
+                toolbarButtons
             }
             if identityOpen.wrappedValue {
                 if let name, !name.isEmpty, name != email {
@@ -339,38 +259,11 @@ struct MenuContentView: View {
         }
     }
 
-    private func poolRow(
-        title: String,
-        percent: Double,
-        reset: Date?,
-        start: Date?,
-        showReset: Bool
-    ) -> some View {
-        let pace = expectedPace(start: start, end: reset, fallbackDays: 30)
-        let used = percent / 100
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("\(title) · \(Int(percent.rounded()))% of monthly limit used")
-                    .font(.callout)
-                    .lineLimit(2)
-                Spacer(minLength: 8)
-                if showReset, let reset {
-                    Text("Resets \(Formatters.resetDateTime.string(from: reset))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            UsageMeter(
-                used: used,
-                pace: pace,
-                overPace: {
-                    if let pace { return used > pace + 0.0001 }
-                    return false
-                }(),
-                dayCount: 0
-            )
-        }
-    }
+    private static let updatedFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
 
     private var outageBanner: some View {
         VStack(alignment: .leading, spacing: 6) {

@@ -35,8 +35,6 @@ SOURCES=(
   "$ROOT/Sources/UsageCache.swift"
   "$ROOT/Sources/StatusFetcher.swift"
   "$ROOT/Sources/LoginItemService.swift"
-  "$ROOT/Sources/CursorAuthStore.swift"
-  "$ROOT/Sources/CursorAPI.swift"
   "$ROOT/Sources/ProviderIcons.swift"
   "$ROOT/Sources/MenuBarRenderer.swift"
   "$ROOT/Sources/UsageViewModel.swift"
@@ -52,12 +50,11 @@ echo "Compiling ${#SOURCES[@]} sources…"
   -whole-module-optimization \
   -target arm64-apple-macos14.0 \
   -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-  -lsqlite3 \
   "${SOURCES[@]}" \
   -o "${MACOS_DIR}/${EXEC_NAME}"
 
 cp "$ROOT/Resources/Info.plist" "${CONTENTS}/Info.plist"
-# Menu bar template mark (official Grok logo) — 1x / 2x / 3x
+# Menu bar template mark: GrokBotIcon.svg (GrokIcon* kept as the fallback mark)
 # App icon: AppIcon.icns (Dock / Finder) + AppIcon.png fallback
 for icon in GrokIcon.png "GrokIcon@2x.png" "GrokIcon@3x.png" GrokIcon.svg \
             GrokBotIcon.svg CursorIcon.svg CursorIcon.png AppIcon.png AppIcon.icns; do

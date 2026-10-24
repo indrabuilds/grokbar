@@ -3,6 +3,8 @@ import AppKit
 enum ProviderIcons {
     static let grok = GrokMenuIcon.image
 
+    /// Menu bar + popover mark. Upstream `Resources/GrokBotIcon.svg`, unmodified, loaded as a
+    /// 16 pt template image (`isTemplate = true`) so it follows light/dark menu bars.
     static let grokBot: NSImage = templateIcon(
         names: ["GrokBotIcon", "GrokBotIcon@2x", "GrokBotIcon@3x"],
         svgName: "GrokBotIcon",

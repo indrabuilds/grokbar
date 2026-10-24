@@ -8,15 +8,25 @@ struct MenuContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            // When usage is loaded, the gear/refresh buttons sit on the plan title row
+            // (providerHeader) instead of on a row of their own above it, so the
+            // content starts at the top margin.
+            if showingSettings || !hasTitleRow {
+                header
+            }
             if showingSettings {
                 settingsPage
             } else {
                 usagePage
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(width: 340)
+    }
+
+    private var hasTitleRow: Bool {
+        if case .loaded = model.state { return true }
+        return false
     }
 
     private var header: some View {
@@ -34,25 +44,33 @@ struct MenuContentView: View {
                 Spacer()
             } else {
                 Spacer()
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(.borderless)
-                .help("Settings")
-                .accessibilityLabel("Settings")
-
-                Button {
-                    model.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .disabled(model.isRefreshing)
-                .help("Refresh")
-                .accessibilityLabel("Refresh")
+                toolbarButtons
             }
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    /// Settings + Refresh. Shown in the header row, or on the plan title row when loaded.
+    private var toolbarButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                showingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+            .help("Settings")
+            .accessibilityLabel("Settings")
+
+            Button {
+                model.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.isRefreshing)
+            .help("Refresh")
+            .accessibilityLabel("Refresh")
         }
         .foregroundStyle(.secondary)
     }
@@ -192,6 +210,7 @@ struct MenuContentView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Show account")
+                toolbarButtons
             }
             if identityOpen.wrappedValue {
                 if let name, !name.isEmpty, name != email {

@@ -59,6 +59,12 @@ was also slow (every 20 min, and the popover only refreshed data older than 15 m
   (`NSPopoverDelegate`), and ignores a reopen within 0.3 s of a close. Clicking in another app (global monitor),
   clicking elsewhere (transient behavior) and Esc (local key monitor, keyCode 53) still close it; monitors are removed
   in `popoverDidClose`.
+- **Popover top spacing.** In 1.1.0 the gear/refresh buttons had a full-width row of their own above the
+  content (`MenuContentView.swift` `header`, right-aligned by a `Spacer`). Together with the 12 pt stack spacing and the
+  14 pt padding, that put the plan title ("SuperGrok") about 45 pt below the top edge. When usage is loaded, the buttons
+  now sit on the plan title row, and the padding is 12 pt on all sides. While loading, signed out, or on the settings
+  page, the separate button row is kept because there is no title row to share. The popover arrow is outside the content
+  view, and `sizingOptions = [.preferredContentSize]` sizes the popover to the content, so neither added space.
 - Bundle id unchanged (`com.pixbroker.GrokBar`).
 
 ## Why 90 seconds

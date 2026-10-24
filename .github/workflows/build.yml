@@ -1,0 +1,33 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build GrokBar.app
+        run: bash build.sh
+
+      - name: Check bundle id and signature
+        run: |
+          id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/GrokBar.app/Contents/Info.plist)
+          echo "CFBundleIdentifier=$id"
+          test "$id" = "com.pixbroker.GrokBar"
+          codesign --force --deep --sign - build/GrokBar.app
+          codesign --verify --deep --strict --verbose=2 build/GrokBar.app
+
+      - name: Zip
+        run: ditto -c -k --sequesterRsrc --keepParent build/GrokBar.app GrokBar.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GrokBar
+          path: GrokBar.zip
+          if-no-files-found: error

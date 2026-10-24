@@ -34,7 +34,7 @@ enum MenuBarRenderer {
         case .idle, .loading:
             text = model.hasActiveOutage ? "⚠" : "…"
         }
-        clusters.append(Cluster(icon: ProviderIcons.grok, primary: NSAttributedString(string: text, attributes: attrs), extra: []))
+        clusters.append(Cluster(icon: ProviderIcons.grokBot, primary: NSAttributedString(string: text, attributes: attrs), extra: []))
 
         var width: CGFloat = 0
         for (i, cluster) in clusters.enumerated() {

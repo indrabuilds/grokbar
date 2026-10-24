@@ -107,24 +107,25 @@ in this PR, so nothing depends on Cursor.
   7. Gear → toggle "Show days left": the bar switches between `42%` and `42% · 3d` immediately; same with
      `defaults write com.pixbroker.GrokBar showDaysLeft -bool false|true` while running.
   8. Click the item twice: it opens, then closes (no flicker/reopen). Click outside and press Esc: it closes.
+  9. The menu bar shows the Grok Bot mark, legible on light and dark menu bars and when highlighted.
 
-## Menu bar icon: unchanged, and why
+## Menu bar icon: Grok Bot mark from the upstream repo
 
-The request was to swap the SuperGrok mark for the Grok Bot icon only if an official, properly licensed asset exists.
-None was found, so the icon is unchanged (still `GrokIcon*` from 1.1.0) and nothing was redrawn.
+The menu bar item and the popover header now use `ProviderIcons.grokBot` instead of `ProviderIcons.grok`
+(`MenuBarRenderer.swift:37`, `MenuContentView.swift:118`). The app (Dock/Finder) icon is unchanged.
 
-- **xAI Brand Guidelines** (https://x.ai/legal/brand-guidelines, dated Feb 14, 2025): logos may be used only
-  "exactly as provided at the download link … without any alteration or adjustment", only to refer to xAI/Grok, not in
-  ways implying endorsement, and xAI "may terminate your permission … at any time". This is a revocable trademark
-  permission, not a license.
-- **Official download** (https://data.x.ai/logos/xAI_Grok_Assets.zip, fetched Oct 24, 2026): Grok logomark, Grok full
-  logomark, Grok wordmark and xAI logomarks in Dark/Light SVG/PNG. **No Grok Bot mark** is included.
-- **Grok Bot mark elsewhere:** only inline on xAI's own pages, an App Store icon (X Corp.), a press handout distributed
-  through Europa Press for news use, and third-party re-hosts (asvg.app, toolradar.com, iloveicons.app) that state the
-  download grants no trademark permission. None is an official, permitted asset for use in an app.
-- Converting any mark into a monochrome template would also be an "alteration" under the guidelines.
-- Note: the repo's existing `Resources/GrokBotIcon.svg` (from the upstream initial commit, used only by the removed Grok
-  Bot card) has no recorded source or license; it was not used for the menu bar.
-- The existing Grok mark: the official kit's Grok logomark is the authoritative source; the upstream `GrokIcon*` files
-  predate this PR and were not changed. To switch to Grok Bot later, ask legal@x.ai or wait for xAI to add a Grok Bot
-  mark to the official kit.
+- **Asset:** `Resources/GrokBotIcon.svg`, unmodified, as shipped in upstream pixbroker/grokbar since its initial commit
+  (`3b1a10e`). Upstream used it for its Grok Bot card. The repo is MIT-licensed, but the file has **no separate recorded
+  source or license**, and MIT for the code doesn't grant rights in a third-party trademark.
+- **Rendering:** loaded from the SVG at 16 pt with `isTemplate = true` (`ProviderIcons.templateIcon`), then drawn in the
+  menu bar text color like the previous mark, so it works on light and dark menu bars. The popover draws it with
+  `.renderingMode(.template)`. If the SVG can't be loaded, the existing SF Symbol fallback (`face.smiling`) is used.
+- **Bundling:** `build.sh` already copies `GrokBotIcon.svg` into `Contents/Resources`. The workflow now fails if it's
+  missing from the built app.
+- **xAI brand-guidelines caveat still applies.** The guidelines (https://x.ai/legal/brand-guidelines) allow xAI logos
+  only "exactly as provided at the download link … without any alteration", only to refer to xAI/Grok, and xAI can
+  revoke permission at any time. The official kit (https://data.x.ai/logos/xAI_Grok_Assets.zip, checked Oct 24, 2026)
+  has no Grok Bot mark, so this SVG isn't an official asset, and drawing it monochrome may count as an alteration. Treat
+  it as upstream's choice, not as cleared for use; ask legal@x.ai before distributing more widely.
+- The previous `GrokIcon*` files stay in the bundle (they're still `GrokMenuIcon`/`ProviderIcons.grok`) and can be
+  restored with a one-line change.

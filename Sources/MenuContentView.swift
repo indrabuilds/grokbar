@@ -115,7 +115,7 @@ struct MenuContentView: View {
         switch model.state {
         case .loaded(let snap):
             providerHeader(
-                icon: ProviderIcons.grok,
+                icon: ProviderIcons.grokBot,
                 title: snap.subscriptionLabel,
                 name: snap.accountName,
                 email: snap.accountEmail ?? model.identity?.email,

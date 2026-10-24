@@ -23,6 +23,8 @@ jobs:
           codesign --force --deep --sign - build/GrokBar.app
           codesign --verify --deep --strict --verbose=2 build/GrokBar.app
 
+      - name: Check menu bar icon is bundled
+        run: test -s build/GrokBar.app/Contents/Resources/GrokBotIcon.svg
       - name: Zip
         run: ditto -c -k --sequesterRsrc --keepParent build/GrokBar.app GrokBar.zip
 

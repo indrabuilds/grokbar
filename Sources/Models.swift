@@ -103,45 +103,6 @@ struct UsageSnapshot: Equatable, Sendable {
     }
 }
 
-// MARK: - Cursor / Grok Bot
-
-struct CursorSnapshot: Equatable, Sendable {
-    /// Cursor Models pool, 0…100.
-    var cursorModelsPercent: Double
-    /// Other Models pool, 0…100.
-    var otherModelsPercent: Double
-    var periodStart: Date?
-    var periodEnd: Date?
-    var planName: String
-    var accountName: String?
-    var accountEmail: String?
-    var statusMessage: String?
-    var fetchedAt: Date
-
-    var resetsIn: TimeInterval? {
-        guard let periodEnd else { return nil }
-        return periodEnd.timeIntervalSinceNow
-    }
-}
-
-struct GrokBotSnapshot: Equatable, Sendable {
-    /// Weekly included pool, 0…100. Nil when the plan has no Bot allowance.
-    var usedPercent: Double?
-    var periodStart: Date?
-    var periodEnd: Date?
-    var planLabel: String
-    var accountName: String?
-    var accountEmail: String?
-    var statusMessage: String?
-    var hasAllowance: Bool
-    var fetchedAt: Date
-
-    var resetsIn: TimeInterval? {
-        guard let periodEnd else { return nil }
-        return periodEnd.timeIntervalSinceNow
-    }
-}
-
 enum LoadState: Equatable {
     case idle
     case loading

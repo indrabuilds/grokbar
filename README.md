@@ -24,15 +24,9 @@ Unofficial menu bar utility. Same information as [Grokbar for Omarchy](https://g
   <img src="docs/screenshots/menubar.png" alt="GrokBar in the macOS menu bar" width="720" />
 </p>
 
-Each enabled product is icon + percent + reset (`5d` / `12h`):
+One item: Grok mark + percent of your usage pool used + time until reset (`5d` / `12h`).
 
-| Cluster | Meaning |
-|---------|---------|
-| **Grok mark** | SuperGrok weekly pool used, time until reset |
-| **Grok Bot face** | Grok Bot weekly pool used, time until reset |
-| **Cursor mark** | Cursor Models %, Other Models %, time until billing reset |
-
-SuperGrok is on by default. Grok Bot and Cursor are off until you enable them in the popover (**gear → Show in Menu Bar**). SuperGrok can be turned off too.
+On the X Subscription, Grok, Grok Bot and Cursor draw from one shared pool, so GrokBar shows that single figure, read from your Grok sign-in alone. Cursor does not need to be installed, open, or signed in.
 
 ---
 
@@ -47,9 +41,9 @@ Click the item for the usage panel: plan, reset countdown, and product split. Sa
 - Plan name, weekly or monthly % used, reset date
 - Pace marker on the usage bar (where linear usage “should” be)
 - SuperGrok product split (Chat, Build, Imagine, Voice, API)
-- Cursor Models / Other Models as two monthly bars
+- “Updated … ago” under the usage
 - Account name and email (click the plan title)
-- Gear for visibility toggles, circular arrow to refresh
+- Gear for info, circular arrow to refresh now
 - xAI status banner when [status.x.ai](https://status.x.ai/) declares an incident
 
 ---
@@ -58,7 +52,6 @@ Click the item for the usage panel: plan, reset countdown, and product split. Sa
 
 - **macOS 14** or later
 - SuperGrok: [Grok Build](https://x.ai/build) signed in (`grok login`) so `~/.grok/auth.json` exists
-- Grok Bot / Cursor: Cursor signed in on this Mac, **same account email as Grok**
 
 ```bash
 grok login   # only if ~/.grok/auth.json is missing
@@ -87,14 +80,11 @@ Ad-hoc signed builds: first open via **right-click → Open** if Gatekeeper warn
 | Situation | What you see |
 |-----------|----------------|
 | SuperGrok signed in | Grok cluster with weekly % and countdown |
-| Grok Bot enabled, matching Cursor session | Bot cluster with weekly % |
-| Cursor enabled, matching Cursor session | Cursor Models %, Other Models %, monthly reset |
-| Cursor signed in as a different account | Hidden; popover explains the mismatch |
-| Not signed in to Grok | `—` and a setup hint; re-checks about every 2 minutes |
+| Not signed in to Grok | `—` and a setup hint; re-checks about every 90 seconds |
 | Network blip | Last good SuperGrok snapshot stays in the menu bar |
 | Active xAI incident | `⚠` plus a banner in the popover |
 
-Background refresh is about **every 20 minutes** when healthy, **~5 minutes** during a declared outage, and **~2 minutes** while waiting for setup. Opening the popover refreshes if data is older than **15 minutes**. The countdown ticks locally every minute.
+Background refresh runs about **every 90 seconds**. Opening the popover always refreshes (at most once per **30 seconds**). On errors GrokBar backs off exponentially (90 s, 3, 6, 12, then 15 min) and honors `Retry-After` on HTTP 429. Polling pauses while the Mac sleeps and refreshes on wake. The countdown ticks locally every minute.
 
 ---
 
@@ -102,9 +92,9 @@ Background refresh is about **every 20 minutes** when healthy, **~5 minutes** du
 
 | Action | Detail |
 |--------|--------|
-| **Read** | `~/.grok/auth.json`; Cursor `state.vscdb` / CLI `auth.json` |
+| **Read** | `~/.grok/auth.json` |
 | **Write** | May refresh Grok OIDC tokens in `~/.grok/auth.json` |
-| **Network** | `auth.x.ai`, `cli-chat-proxy.grok.com`, `api2.cursor.sh` (usage metadata), `status.x.ai/feed.xml` |
+| **Network** | `auth.x.ai`, `cli-chat-proxy.grok.com` (usage metadata), `status.x.ai/feed.xml` |
 | **Not sent** | Chats, code, project files |
 
 No inference or completions — only usage, subscription metadata, and the public status feed.
@@ -116,10 +106,9 @@ No inference or completions — only usage, subscription metadata, and the publi
 1. Load Grok OIDC credentials from `~/.grok/auth.json` (same file as `grok`).
 2. Refresh the access token when near expiry (`auth.x.ai/oauth2/token`).
 3. Fetch SuperGrok billing (`/v1/billing?format=credits`) plus plan/profile when available.
-4. If Grok Bot or Cursor is enabled, load the Cursor session and call `GetCurrentPeriodUsage` / `GetSandUsageStatus` only when the Cursor email matches Grok.
-5. Fetch the public xAI status RSS feed.
-6. Cache the last good SuperGrok snapshot under Application Support.
-7. Register as a login item via `SMAppService`.
+4. Fetch the public xAI status RSS feed.
+5. Cache the last good SuperGrok snapshot under Application Support.
+6. Register as a login item via `SMAppService`.
 
 ---
 

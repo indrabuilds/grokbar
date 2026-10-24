@@ -35,8 +35,6 @@ SOURCES=(
   "$ROOT/Sources/UsageCache.swift"
   "$ROOT/Sources/StatusFetcher.swift"
   "$ROOT/Sources/LoginItemService.swift"
-  "$ROOT/Sources/CursorAuthStore.swift"
-  "$ROOT/Sources/CursorAPI.swift"
   "$ROOT/Sources/ProviderIcons.swift"
   "$ROOT/Sources/MenuBarRenderer.swift"
   "$ROOT/Sources/UsageViewModel.swift"
@@ -52,7 +50,6 @@ echo "Compiling ${#SOURCES[@]} sources…"
   -whole-module-optimization \
   -target arm64-apple-macos14.0 \
   -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-  -lsqlite3 \
   "${SOURCES[@]}" \
   -o "${MACOS_DIR}/${EXEC_NAME}"
 

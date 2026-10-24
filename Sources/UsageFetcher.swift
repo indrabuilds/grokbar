@@ -6,6 +6,8 @@ enum UsageFetcherError: LocalizedError {
     case badPayload
     case transport(String)
     case timedOut
+    /// HTTP 429. Seconds from `Retry-After`, when the server sent one.
+    case rateLimited(TimeInterval?)
 
     var errorDescription: String? {
         switch self {
@@ -19,7 +21,14 @@ enum UsageFetcherError: LocalizedError {
             return "Network error while fetching usage."
         case .timedOut:
             return "Timed out fetching usage."
+        case .rateLimited:
+            return "Grok usage is rate-limited. Retrying shortly."
         }
+    }
+
+    var retryAfter: TimeInterval? {
+        if case .rateLimited(let seconds) = self { return seconds }
+        return nil
     }
 
     var isAuthIssue: Bool {
@@ -29,7 +38,7 @@ enum UsageFetcherError: LocalizedError {
 
     var isTransient: Bool {
         switch self {
-        case .timedOut, .transport:
+        case .timedOut, .transport, .rateLimited:
             return true
         case .unauthorized, .httpStatus, .badPayload:
             return false
@@ -115,6 +124,9 @@ enum UsageFetcher {
         if http.statusCode == 401 || http.statusCode == 403 {
             throw UsageFetcherError.unauthorized
         }
+        if http.statusCode == 429 {
+            throw UsageFetcherError.rateLimited(retryAfter(http))
+        }
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
             throw UsageFetcherError.httpStatus(http.statusCode, String(body.prefix(180)))
@@ -123,6 +135,20 @@ enum UsageFetcher {
             throw UsageFetcherError.badPayload
         }
         return root
+    }
+
+    /// `Retry-After` as delta-seconds or an HTTP date.
+    private static func retryAfter(_ http: HTTPURLResponse) -> TimeInterval? {
+        guard let raw = http.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespaces), !raw.isEmpty
+        else { return nil }
+        if let seconds = TimeInterval(raw) { return max(0, seconds) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let date = f.date(from: raw) else { return nil }
+        return max(0, date.timeIntervalSinceNow)
     }
 
     private static func optionalGetJSON(url: URL, token: String) async -> [String: Any]? {

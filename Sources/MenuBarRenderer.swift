@@ -13,10 +13,6 @@ enum MenuBarRenderer {
             .font: font,
             .foregroundColor: color,
         ]
-        let dimAttrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: color.withAlphaComponent(0.7),
-        ]
 
         struct Cluster {
             var icon: NSImage?
@@ -26,51 +22,19 @@ enum MenuBarRenderer {
 
         var clusters: [Cluster] = []
 
-        if model.showGrokUsage {
-            let text: String
-            switch model.state {
-            case .loaded(let snap):
-                text = barText(percent: snap.usedPercent, resetsIn: snap.resetsIn)
-            case .unavailable:
-                text = model.hasActiveOutage ? "⚠" : "—"
-            case .failed:
-                text = model.hasActiveOutage ? "⚠" : "!"
-            case .idle, .loading:
-                text = model.hasActiveOutage ? "⚠" : "…"
-            }
-            clusters.append(Cluster(icon: ProviderIcons.grok, primary: NSAttributedString(string: text, attributes: attrs), extra: []))
+        // One item: the shared X Subscription pool from the Grok session.
+        let text: String
+        switch model.state {
+        case .loaded(let snap):
+            text = barText(percent: snap.usedPercent, resetsIn: snap.resetsIn)
+        case .unavailable:
+            text = model.hasActiveOutage ? "⚠" : "—"
+        case .failed:
+            text = model.hasActiveOutage ? "⚠" : "!"
+        case .idle, .loading:
+            text = model.hasActiveOutage ? "⚠" : "…"
         }
-
-        if model.showGrokBotUsage {
-            if let snap = model.grokBotSnapshot, let percent = snap.usedPercent, snap.hasAllowance {
-                let text = barText(percent: percent, resetsIn: snap.resetsIn)
-                clusters.append(Cluster(icon: ProviderIcons.grokBot, primary: NSAttributedString(string: text, attributes: attrs), extra: []))
-            } else if model.grokBotMessage != nil {
-                clusters.append(Cluster(icon: ProviderIcons.grokBot, primary: NSAttributedString(string: "—", attributes: attrs), extra: []))
-            }
-        }
-
-        if model.showCursorUsage {
-            if let snap = model.cursorSnapshot {
-                let auto = NSAttributedString(string: "\(Int(snap.cursorModelsPercent.rounded()))%", attributes: attrs)
-                let api = NSAttributedString(string: "\(Int(snap.otherModelsPercent.rounded()))%", attributes: attrs)
-                var extra = [api]
-                if let countdown = formatCountdown(snap.resetsIn, compact: true) {
-                    extra.append(NSAttributedString(string: countdown, attributes: dimAttrs))
-                }
-                clusters.append(Cluster(icon: ProviderIcons.cursor, primary: auto, extra: extra))
-            } else if model.cursorMessage != nil {
-                clusters.append(Cluster(icon: ProviderIcons.cursor, primary: NSAttributedString(string: "—", attributes: attrs), extra: []))
-            }
-        }
-
-        if clusters.isEmpty {
-            clusters.append(Cluster(
-                icon: ProviderIcons.grok,
-                primary: NSAttributedString(string: model.hasActiveOutage ? "⚠" : "—", attributes: attrs),
-                extra: []
-            ))
-        }
+        clusters.append(Cluster(icon: ProviderIcons.grok, primary: NSAttributedString(string: text, attributes: attrs), extra: []))
 
         var width: CGFloat = 0
         for (i, cluster) in clusters.enumerated() {

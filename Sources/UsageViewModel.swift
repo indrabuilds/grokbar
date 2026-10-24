@@ -8,117 +8,39 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isRefreshing = false
     @Published private(set) var serviceStatus: ServiceStatusSnapshot?
+    /// When the shown pool figure was fetched (live or from cache).
+    @Published private(set) var lastUpdatedAt: Date?
 
-    @Published private(set) var cursorSnapshot: CursorSnapshot?
-    @Published private(set) var cursorMessage: String?
-    @Published private(set) var grokBotSnapshot: GrokBotSnapshot?
-    @Published private(set) var grokBotMessage: String?
-
-    @Published var showGrokUsage: Bool {
-        didSet {
-            UserDefaults.standard.set(showGrokUsage, forKey: PrefKey.showGrok)
-            if didStart { refresh(force: true) }
-        }
-    }
-    @Published var showGrokBotUsage: Bool {
-        didSet {
-            UserDefaults.standard.set(showGrokBotUsage, forKey: PrefKey.showBot)
-            if !showGrokBotUsage {
-                grokBotSnapshot = nil
-                grokBotMessage = nil
-            }
-            if didStart { refresh(force: true) }
-        }
-    }
-    @Published var showCursorUsage: Bool {
-        didSet {
-            UserDefaults.standard.set(showCursorUsage, forKey: PrefKey.showCursor)
-            if !showCursorUsage {
-                cursorSnapshot = nil
-                cursorMessage = nil
-            }
-            if didStart { refresh(force: true) }
-        }
-    }
-
-    private enum PrefKey {
-        static let showGrok = "showGrokUsage"
-        static let showBot = "showGrokBotUsage"
-        static let showCursor = "showCursorUsage"
-    }
+    // The separate SuperGrok / Grok Bot / Cursor toggles are gone: under the X
+    // Subscription they share one pool, read from the Grok session alone.
+    // Old `showGrokUsage` / `showGrokBotUsage` / `showCursorUsage` defaults are
+    // left untouched and simply ignored.
 
     private var fetchTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var didStart = false
     private var lastFetchAttemptAt: Date?
+    private var consecutiveFailures = 0
+    /// Automatic fetches wait until this time (error backoff / Retry-After).
+    private var notBefore: Date?
+    private var isAsleep = false
+    private var workspaceObservers: [NSObjectProtocol] = []
 
-    private let staleAfter: TimeInterval = 15 * 60
-    private let backgroundPollInterval: TimeInterval = 20 * 60
-    private let setupPollInterval: TimeInterval = 2 * 60
-    private let outagePollInterval: TimeInterval = 5 * 60
+    /// Background poll while healthy. One small authenticated GET (+ 3 optional)
+    /// to cli-chat-proxy every 90 s keeps the bar close to live without hammering it.
+    private let pollInterval: TimeInterval = 90
+    /// Opening the popover refreshes unless the last attempt was this recent.
+    private let panelMinGap: TimeInterval = 30
+    private let maxBackoff: TimeInterval = 15 * 60
+    private let maxRetryAfter: TimeInterval = 60 * 60
 
     @Published private(set) var clockTick: Date = Date()
 
-    init() {
-        let defaults = UserDefaults.standard
-        showGrokUsage = defaults.object(forKey: PrefKey.showGrok) as? Bool ?? true
-        showGrokBotUsage = defaults.bool(forKey: PrefKey.showBot)
-        showCursorUsage = defaults.bool(forKey: PrefKey.showCursor)
-    }
+    init() {}
 
     var hasActiveOutage: Bool {
         serviceStatus?.hasActiveIncident == true
-    }
-
-    var needsCursorSession: Bool {
-        showCursorUsage || showGrokBotUsage
-    }
-
-    var menuBarTitle: String {
-        _ = clockTick
-        let outage = hasActiveOutage
-        var parts: [String] = []
-        if showGrokUsage {
-            switch state {
-            case .loaded(let snap):
-                parts.append(formatBar(percent: snap.usedPercent, resetsIn: snap.resetsIn))
-            case .unavailable:
-                parts.append(outage ? "⚠" : "—")
-            case .failed:
-                parts.append(outage ? "⚠" : "!")
-            case .idle, .loading:
-                parts.append(outage ? "⚠" : "…")
-            }
-        }
-        if showGrokBotUsage {
-            if let snap = grokBotSnapshot, let percent = snap.usedPercent, snap.hasAllowance {
-                parts.append(formatBar(percent: percent, resetsIn: snap.resetsIn))
-            } else if let grokBotMessage, !grokBotMessage.isEmpty {
-                parts.append("—")
-            }
-        }
-        if showCursorUsage {
-            if let snap = cursorSnapshot {
-                let auto = "\(Int(snap.cursorModelsPercent.rounded()))%"
-                let api = "\(Int(snap.otherModelsPercent.rounded()))%"
-                if let countdown = formatCountdown(snap.resetsIn, compact: true) {
-                    parts.append("\(auto) \(api) \(countdown)")
-                } else {
-                    parts.append("\(auto) \(api)")
-                }
-            } else if cursorMessage != nil {
-                parts.append("—")
-            }
-        }
-        if parts.isEmpty {
-            return outage ? "⚠" : "—"
-        }
-        let joined = parts.joined(separator: "  ")
-        if outage, showGrokUsage == false {
-            return "⚠ \(joined)"
-        }
-        return joined
     }
 
     var menuBarAccessibilityLabel: String {
@@ -127,41 +49,18 @@ final class UsageViewModel: ObservableObject {
         if let status = serviceStatus, status.hasActiveIncident {
             parts.append("xAI status issue: \(status.headline)")
         }
-        if showGrokUsage {
-            switch state {
-            case .loaded(let snap):
-                let reset = formatCountdown(snap.resetsIn) ?? "unknown"
-                parts.append(
-                    "Grok \(Int(snap.usedPercent.rounded()))% used, \(snap.cycleLabel.lowercased()) pool, resets in \(reset)"
-                )
-            case .unavailable(let title, let hint):
-                parts.append("Grok: \(title). \(hint)")
-            case .failed(let message):
-                parts.append("Grok usage error: \(message)")
-            default:
-                break
-            }
-        }
-        if showGrokBotUsage {
-            if let snap = grokBotSnapshot, let percent = snap.usedPercent {
-                let reset = formatCountdown(snap.resetsIn) ?? "unknown"
-                parts.append("Grok Bot \(Int(percent.rounded()))% used, weekly pool, resets in \(reset)")
-            } else if let grokBotMessage {
-                parts.append("Grok Bot: \(grokBotMessage)")
-            }
-        }
-        if showCursorUsage {
-            if let snap = cursorSnapshot {
-                let reset = formatCountdown(snap.resetsIn) ?? "unknown"
-                parts.append(
-                    "Cursor Models \(Int(snap.cursorModelsPercent.rounded()))%, Other Models \(Int(snap.otherModelsPercent.rounded()))%, resets in \(reset)"
-                )
-            } else if let cursorMessage {
-                parts.append("Cursor: \(cursorMessage)")
-            }
-        }
-        if parts.isEmpty {
-            parts.append("GrokBar. Open to choose what to show.")
+        switch state {
+        case .loaded(let snap):
+            let reset = formatCountdown(snap.resetsIn) ?? "unknown"
+            parts.append(
+                "Usage \(Int(snap.usedPercent.rounded()))% used, \(snap.cycleLabel.lowercased()) pool, resets in \(reset)"
+            )
+        case .unavailable(let title, let hint):
+            parts.append("Grok: \(title). \(hint)")
+        case .failed(let message):
+            parts.append("Usage error: \(message)")
+        case .idle, .loading:
+            parts.append("GrokBar. Loading usage.")
         }
         return parts.joined(separator: ". ")
     }
@@ -171,14 +70,17 @@ final class UsageViewModel: ObservableObject {
         didStart = true
         LoginItemService.ensureEnabled()
         loadCacheIntoState()
-        refreshIfStale()
+        observeSleepAndWake()
+        refreshAutomatically()
         scheduleBackgroundPoll()
         scheduleClockTick()
     }
 
+    /// Always refresh on open, at most once per `panelMinGap`.
     func panelDidOpen() {
         start()
-        refreshIfStale()
+        if let last = lastFetchAttemptAt, Date().timeIntervalSince(last) < panelMinGap { return }
+        refreshAutomatically()
     }
 
     func stop() {
@@ -189,78 +91,46 @@ final class UsageViewModel: ObservableObject {
         fetchTask?.cancel()
         fetchTask = nil
         isRefreshing = false
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach { center.removeObserver($0) }
+        workspaceObservers.removeAll()
     }
 
+    /// Refresh button: always fetches unless a fetch is already in flight.
     func refresh() {
-        refresh(force: true)
+        runFetch()
     }
 
-    func refreshIfStale() {
-        if !isStale { return }
-        refresh(force: false)
+    /// Poll / popover / wake: respects sleep, error backoff and Retry-After.
+    private func refreshAutomatically() {
+        if isAsleep { return }
+        if let notBefore, notBefore > Date() { return }
+        runFetch()
     }
 
-    private var isStale: Bool {
-        if hasActiveOutage { return true }
-        if showGrokUsage, case .loaded(let snap) = state {
-            if Date().timeIntervalSince(snap.fetchedAt) < staleAfter {
-                // Still stale if an enabled extra has no snapshot yet.
-                if showCursorUsage && cursorSnapshot == nil { return true }
-                if showGrokBotUsage && grokBotSnapshot == nil { return true }
-                return false
-            }
-        }
-        if case .unavailable = state { return true }
-        if case .failed = state { return true }
-        if let last = lastFetchAttemptAt, Date().timeIntervalSince(last) < staleAfter {
-            return false
-        }
-        return true
-    }
-
-    private func refresh(force: Bool) {
+    private func runFetch() {
         if isRefreshing { return }
-        if !force, !isStale { return }
 
-        let hadLoadedData: Bool = {
-            if case .loaded = state { return true }
-            return false
-        }()
-
-        if showGrokUsage, !hadLoadedData {
-            if case .idle = state {
-                state = .loading
-            } else if case .failed = state {
-                state = .loading
-            }
+        if case .idle = state {
+            state = .loading
+        } else if case .failed = state {
+            state = .loading
         }
 
         isRefreshing = true
         lastFetchAttemptAt = Date()
 
-        let includeGrok = showGrokUsage
-        let includeCursor = showCursorUsage
-        let includeBot = showGrokBotUsage
-
         fetchTask = Task { [weak self] in
-            defer {
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.isRefreshing = false
-                    self.fetchTask = nil
-                }
-            }
-
             let result = await Task.detached(priority: .utility) {
-                await Self.fetchInBackground(
-                    includeGrok: includeGrok,
-                    includeCursor: includeCursor,
-                    includeGrokBot: includeBot
-                )
+                await Self.fetchInBackground()
             }.value
 
-            guard let self, !Task.isCancelled else { return }
-            await self.apply(result: result, hadLoadedData: hadLoadedData)
+            guard let self else { return }
+            // Reset here (main actor) on every path so the button can't stay disabled.
+            self.isRefreshing = false
+            self.fetchTask = nil
+            guard !Task.isCancelled else { return }
+            self.apply(result: result)
         }
     }
 
@@ -279,78 +149,52 @@ final class UsageViewModel: ObservableObject {
         }
         if case .loaded = state { return }
         state = .loaded(cached.snapshot)
+        lastUpdatedAt = cached.snapshot.fetchedAt
     }
 
-    private func apply(
-        result: CombinedFetch,
-        hadLoadedData: Bool
-    ) async {
+    private func apply(result: CombinedFetch) {
         if let status = result.serviceStatus {
             self.serviceStatus = status
         }
 
-        if showGrokUsage {
-            switch result.usage {
-            case .success(let (identity, snapshot)):
-                self.identity = identity
-                self.state = .loaded(snapshot)
-                self.lastError = nil
-                UsageCache.save(snapshot, email: identity.email)
+        switch result.usage {
+        case .success(let (identity, snapshot)):
+            self.identity = identity
+            self.state = .loaded(snapshot)
+            self.lastError = nil
+            self.lastUpdatedAt = snapshot.fetchedAt
+            consecutiveFailures = 0
+            notBefore = nil
+            UsageCache.save(snapshot, email: identity.email)
 
-            case .failure(let error):
-                let classified = classify(error, outage: result.serviceStatus)
-                self.lastError = classified.menuMessage
+        case .failure(let error):
+            let classified = classify(error, outage: result.serviceStatus)
+            self.lastError = classified.menuMessage
 
-                switch classified.kind {
-                case .setup:
-                    self.identity = nil
-                    self.state = .unavailable(title: classified.menuMessage, hint: classified.hint)
-                    UsageCache.clear()
+            switch classified.kind {
+            case .setup:
+                // Local sign-in problem: keep polling at the normal pace so a new
+                // `grok login` is picked up quickly.
+                self.identity = nil
+                self.state = .unavailable(title: classified.menuMessage, hint: classified.hint)
+                self.lastUpdatedAt = nil
+                UsageCache.clear()
+                consecutiveFailures = 0
+                notBefore = nil
 
-                case .transient, .hard:
-                    if !hadLoadedData {
-                        if case .loaded = state {
-                            // keep
-                        } else {
-                            state = .failed(classified.menuMessage)
-                        }
-                    }
+            case .transient, .hard:
+                if case .loaded = state {
+                    // keep last good figure
+                } else {
+                    state = .failed(classified.menuMessage)
                 }
-            case .none:
-                break
+                consecutiveFailures += 1
+                var wait = min(maxBackoff, pollInterval * pow(2.0, Double(consecutiveFailures - 1)))
+                if let retryAfter = (error as? UsageFetcherError)?.retryAfter {
+                    wait = max(wait, min(retryAfter, maxRetryAfter))
+                }
+                notBefore = Date().addingTimeInterval(wait)
             }
-        }
-
-        if showCursorUsage {
-            switch result.cursor {
-            case .success(let snap):
-                cursorSnapshot = snap
-                cursorMessage = snap.statusMessage
-            case .failure(let error):
-                cursorSnapshot = nil
-                cursorMessage = error.localizedDescription
-            case .none:
-                break
-            }
-        } else {
-            cursorSnapshot = nil
-            cursorMessage = nil
-        }
-
-        if showGrokBotUsage {
-            switch result.grokBot {
-            case .success(let snap):
-                grokBotSnapshot = snap
-                grokBotMessage = snap.statusMessage
-            case .failure(let error):
-                grokBotSnapshot = nil
-                grokBotMessage = error.localizedDescription
-            case .none:
-                break
-            }
-        } else {
-            grokBotSnapshot = nil
-            grokBotMessage = nil
         }
     }
 
@@ -414,45 +258,18 @@ final class UsageViewModel: ObservableObject {
     }
 
     private struct CombinedFetch: @unchecked Sendable {
-        var usage: Result<(AuthIdentity, UsageSnapshot), Error>?
-        var cursor: Result<CursorSnapshot, Error>?
-        var grokBot: Result<GrokBotSnapshot, Error>?
+        var usage: Result<(AuthIdentity, UsageSnapshot), Error>
         var serviceStatus: ServiceStatusSnapshot?
     }
 
-    private nonisolated static func fetchInBackground(
-        includeGrok: Bool,
-        includeCursor: Bool,
-        includeGrokBot: Bool
-    ) async -> CombinedFetch {
+    /// Grok session only (`~/.grok/auth.json` + cli-chat-proxy). No Cursor login needed.
+    private nonisolated static func fetchInBackground() async -> CombinedFetch {
         async let statusTask: ServiceStatusSnapshot? = {
             try? await StatusFetcher.fetch()
         }()
-
-        var usage: Result<(AuthIdentity, UsageSnapshot), Error>?
-        if includeGrok {
-            usage = await fetchGrok()
-        }
-
-        var cursor: Result<CursorSnapshot, Error>?
-        var grokBot: Result<GrokBotSnapshot, Error>?
-        if includeCursor || includeGrokBot {
-            do {
-                let session = try CursorAuthStore.loadMatchingGrok()
-                if includeCursor {
-                    cursor = await captured { try await CursorAPI.fetchPeriod(session: session) }
-                }
-                if includeGrokBot {
-                    grokBot = await captured { try await CursorAPI.fetchGrokBot(session: session) }
-                }
-            } catch {
-                if includeCursor { cursor = .failure(error) }
-                if includeGrokBot { grokBot = .failure(error) }
-            }
-        }
-
+        let usage = await fetchGrok()
         let status = await statusTask
-        return CombinedFetch(usage: usage, cursor: cursor, grokBot: grokBot, serviceStatus: status)
+        return CombinedFetch(usage: usage, serviceStatus: status)
     }
 
     private nonisolated static func fetchGrok() async -> Result<(AuthIdentity, UsageSnapshot), Error> {
@@ -500,12 +317,6 @@ final class UsageViewModel: ObservableObject {
         }
     }
 
-    func openCursorDashboard() {
-        if let url = URL(string: "https://cursor.com/dashboard/usage") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     func openStatusPage() {
         if let link = serviceStatus?.activeIncidents.first?.link {
             NSWorkspace.shared.open(link)
@@ -519,26 +330,49 @@ final class UsageViewModel: ObservableObject {
         NSApp.terminate(nil)
     }
 
-    private var currentPollInterval: TimeInterval {
-        if hasActiveOutage {
-            return outagePollInterval
+    private var nextPollDelay: TimeInterval {
+        if let notBefore {
+            let remaining = notBefore.timeIntervalSinceNow
+            if remaining > 0 { return max(1, remaining) }
         }
-        if case .unavailable = state {
-            return setupPollInterval
-        }
-        return backgroundPollInterval
+        return pollInterval
     }
 
     private func scheduleBackgroundPoll() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                let interval = await MainActor.run { self?.currentPollInterval ?? 20 * 60 }
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                let delay = await MainActor.run { self?.nextPollDelay ?? 90 }
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 guard let self, !Task.isCancelled else { return }
-                self.refresh(force: true)
+                self.refreshAutomatically()
             }
         }
+    }
+
+    /// Pause polling while the Mac sleeps; refresh as soon as it wakes.
+    private func observeSleepAndWake() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isAsleep = true
+                self.pollTask?.cancel()
+                self.pollTask = nil
+            }
+        })
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isAsleep = false
+                self.refreshAutomatically()
+                self.scheduleBackgroundPoll()
+            }
+        })
     }
 
     private func scheduleClockTick() {
@@ -550,21 +384,5 @@ final class UsageViewModel: ObservableObject {
                 self.clockTick = Date()
             }
         }
-    }
-
-    private func formatBar(percent: Double, resetsIn: TimeInterval?) -> String {
-        let pct = Int(percent.rounded())
-        if let countdown = formatCountdown(resetsIn, compact: true) {
-            return "\(pct)% \(countdown)"
-        }
-        return "\(pct)%"
-    }
-}
-
-private func captured<T>(_ body: () async throws -> T) async -> Result<T, Error> {
-    do {
-        return .success(try await body())
-    } catch {
-        return .failure(error)
     }
 }

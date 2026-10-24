@@ -83,27 +83,6 @@ final class StatusBarController: NSObject {
                 self?.updateButton()
             }
             .store(in: &cancellables)
-
-        model.$showGrokUsage
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateButton() }
-            .store(in: &cancellables)
-        model.$showGrokBotUsage
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateButton() }
-            .store(in: &cancellables)
-        model.$showCursorUsage
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateButton() }
-            .store(in: &cancellables)
-        model.$cursorSnapshot
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateButton() }
-            .store(in: &cancellables)
-        model.$grokBotSnapshot
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateButton() }
-            .store(in: &cancellables)
     }
 
     private func updateButton() {
@@ -125,6 +104,9 @@ final class StatusBarController: NSObject {
 
     private func showPopover(relativeTo button: NSStatusBarButton) {
         model.panelDidOpen()
+        // Accessory apps aren't active by default; activate so the first click
+        // in the popover lands on its buttons instead of just focusing it.
+        NSApp.activate(ignoringOtherApps: true)
 
         let popover = NSPopover()
         popover.behavior = .transient
